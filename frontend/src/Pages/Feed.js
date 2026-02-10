@@ -1,8 +1,10 @@
 
-import React, { useEffect, useState, useContext } from "react";
+import React, { useEffect, useState, useContext, useCallback } from "react";
 import axios from "axios";
 import { AuthContext } from "../context/AuthContext";
 import { jwtDecode } from "jwt-decode";
+
+import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom"; // Import Link
 import {
   FaHeart,
@@ -12,14 +14,38 @@ import {
   FaMoon,
   FaCommentDots,
   FaTrash,
-  FaEdit,
-  FaTimes
+  FaEdit
 } from "react-icons/fa";
+
+const feedContainerVariants = {
+  hidden: { opacity: 0, y: 14 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { staggerChildren: 0.08, delayChildren: 0.1 },
+  },
+};
+
+const feedItemVariants = {
+  hidden: { opacity: 0, y: 16, scale: 0.98 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { duration: 0.28, ease: "easeOut" },
+  },
+  exit: { opacity: 0, y: 10, scale: 0.98 },
+};
+
+const fadeInUp = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.25 } },
+};
 
 const FeedPage = () => {
   const [feed, setFeed] = useState([]);
   const [darkMode, setDarkMode] = useState(false);
-  const { token, user: authUser } = useContext(AuthContext);
+  const { token } = useContext(AuthContext);
   const [userId, setUserId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -35,23 +61,7 @@ const FeedPage = () => {
   const [editingComment, setEditingComment] = useState(null);
   const [editCommentText, setEditCommentText] = useState("");
 
-  useEffect(() => {
-    const initialize = async () => {
-      try {
-        if (token) {
-          const decoded = jwtDecode(token);
-          setUserId(decoded.id);
-        }
-        await fetchFeed();
-      } catch (err) {
-        console.error("Initialization error:", err);
-        setError("Failed to initialize. Please refresh the page.");
-      }
-    };
-    initialize();
-  }, [token]);
-
-  const fetchFeed = async () => {
+  const fetchFeed = useCallback(async () => {
     try {
       setLoading(true);
       const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/posts/feed`, {
@@ -68,12 +78,35 @@ const FeedPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        if (token) {
+          const decoded = jwtDecode(token);
+          setUserId(decoded.id);
+        }
+        await fetchFeed();
+      } catch (err) {
+        console.error("Initialization error:", err);
+        setError("Failed to initialize. Please refresh the page.");
+      }
+    };
+    initialize();
+  }, [token, fetchFeed]);
 
   const handleLike = async (postId) => {
     if (!token || !postId) return;
 
+    // Determine HTTP method BEFORE optimistic update to avoid stale state
+    const targetPost = feed.find(p => p._id === postId);
+    const currentLikes = targetPost?.likes || [];
+    const isCurrentlyLiked = currentLikes.includes(userId);
+    const method = isCurrentlyLiked ? "delete" : "post";
+
     try {
+      // Optimistic update
       setFeed(prevFeed =>
         prevFeed.map(post => {
           if (post._id === postId) {
@@ -89,10 +122,6 @@ const FeedPage = () => {
           return post;
         })
       );
-
-      const targetPost = feed.find(p => p._id === postId);
-      const currentLikes = targetPost?.likes || [];
-      const method = currentLikes.includes(userId) ? "delete" : "post";
 
       await axios({
         method,
@@ -275,9 +304,9 @@ const FeedPage = () => {
   }
 
   return (
-    <div className={`min-vh-100 ${darkMode ? 'bg-dark' : 'bg-light'}`}>
+    <div className={`min-vh-100 feed-page ${darkMode ? "bg-dark text-white" : "bg-light"}`}>
       {/* Modern Header */}
-      <nav className={`navbar navbar-expand-lg ${darkMode ? 'navbar-dark bg-dark border-secondary' : 'navbar-light bg-white'} border-bottom shadow-sm sticky-top`}>
+      <nav className={`navbar navbar-expand-lg ${darkMode ? "navbar-dark bg-dark border-secondary" : "navbar-light bg-white"} border-bottom shadow-sm sticky-top feed-navbar`}>
         <div className="container">
           <a className="navbar-brand fw-bold fs-3 text-primary" href="/" style={{ fontFamily: "'Poppins', sans-serif" }}>
             PhotoFlux
@@ -285,21 +314,19 @@ const FeedPage = () => {
 
           <div className="d-flex align-items-center">
             <button
-              className={`btn ${darkMode ? 'btn-outline-light' : 'btn-outline-secondary'} rounded-circle me-3`}
+              className={`btn ${darkMode ? "btn-outline-light" : "btn-outline-secondary"} rounded-circle me-3 feed-icon-btn`}
               onClick={() => setDarkMode(!darkMode)}
             >
               {darkMode ? <FaSun /> : <FaMoon />}
             </button>
 
-            <div className="dropdown">
-              <Link
-                to={`/profile/${username}`}
-                className="btn btn-primary rounded-pill px-4 text-decoration-none"
-              >
-                <i className="fas fa-user me-2"></i>
-                Profile
-              </Link>
-            </div>
+            <Link
+              to={`/profile/${username}`}
+              className="btn btn-primary rounded-pill px-4 text-decoration-none feed-profile-btn"
+            >
+              <i className="fas fa-user me-2"></i>
+              Profile
+            </Link>
           </div>
         </div>
       </nav>
@@ -307,34 +334,53 @@ const FeedPage = () => {
       <div className="container py-4">
         <div className="row">
           {/* Main Feed */}
-          <div className="col-lg-8 mx-auto">
+          <div className="col-lg-8 mx-auto feed-main">
             {feed.length === 0 ? (
-              <div className="text-center py-5">
-                <div className={`card border-0 shadow-sm ${darkMode ? 'bg-secondary text-white' : 'bg-white'}`}>
+              <motion.div
+                className="text-center py-5"
+                variants={fadeInUp}
+                initial="hidden"
+                animate="visible"
+              >
+                <div className="card border-0 shadow-sm feed-empty-card">
                   <div className="card-body py-5">
                     <div className="display-1 text-muted mb-3">📷</div>
                     <h4 className="card-title mb-3">No Posts Yet</h4>
-                    <p className={`card-text mb-4 ${darkMode ? 'text-light' : 'text-muted'}`}>Follow users to see their posts or create your own!</p>
-                    <Link to="/post" className="btn btn-primary px-4">
+                    <p className="card-text text-muted mb-4">Follow users to see their posts or create your own!</p>
+                    <Link to="/post" className="btn btn-primary px-4 feed-cta-btn">
                       Create Your First Post
                     </Link>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             ) : (
-              <div className="feed-container">
+              <motion.div
+                className="feed-container"
+                variants={feedContainerVariants}
+                initial="hidden"
+                animate="visible"
+              >
+                <AnimatePresence>
                 {feed.map((post) => {
                   const isLiked = (post.likes || []).includes(userId);
                   const likeCount = (post.likes || []).length;
                   const hasImage = post.image || post.imageUrl;
 
                   return (
-                    <div className={`card mb-4 shadow-sm border-0 rounded-3 overflow-hidden ${darkMode ? 'bg-secondary text-white' : 'bg-white'}`} key={post._id}>
+                    <motion.div
+                      className="card mb-4 shadow-sm border-0 rounded-3 overflow-hidden feed-card"
+                      key={post._id}
+                      variants={feedItemVariants}
+                      initial="hidden"
+                      animate="visible"
+                      exit="exit"
+                      layout
+                    >
                       {/* Post Header */}
-                      <div className={`card-header border-0 d-flex align-items-center justify-content-between py-3 ${darkMode ? 'bg-secondary text-white' : 'bg-white'}`}>
+                      <div className="card-header bg-white border-0 d-flex align-items-center justify-content-between py-3 feed-post-header">
                         <div className="d-flex align-items-center">
-                          <div className="rounded-circle overflow-hidden me-3 border border-3 border-primary" style={{ width: '50px', height: '50px' }}>
-                            <img
+                          <div className="rounded-circle overflow-hidden me-3 border border-3 border-primary feed-post-avatar" style={{width: '50px', height: '50px'}}>
+                            <img 
                               src={post.author?.profilePic || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`}
                               alt="Profile"
                               className="w-100 h-100 object-fit-cover"
@@ -348,7 +394,7 @@ const FeedPage = () => {
                             </small>
                           </div>
                         </div>
-                        <button className={`btn btn-link ${darkMode ? "text-light" : "text-muted"}`}>
+                        <button className={`btn btn-link ${darkMode ? "text-light" : "text-muted"} feed-ghost-btn`}>
                           <i className="fas fa-ellipsis-h"></i>
                         </button>
                       </div>
@@ -357,7 +403,7 @@ const FeedPage = () => {
                       <div className="card-body p-0">
                         {/* Post Image */}
                         {hasImage && (
-                          <div className="post-image">
+                          <div className="post-image feed-post-image">
                             <img
                               src={post.image || post.imageUrl}
                               className="w-100"
@@ -420,14 +466,14 @@ const FeedPage = () => {
                         )}
 
                         {/* Post Caption */}
-                        <div className="p-4">
+                          <div className="p-4 feed-post-body">
                           <h5 className="fw-bold mb-3">{post.caption || "No caption"}</h5>
 
                           {/* Post Actions */}
-                          <div className="d-flex justify-content-between align-items-center mb-3">
-                            <div className="d-flex gap-3">
-                              <button
-                                className="btn btn-link p-0 text-decoration-none"
+                            <div className="d-flex justify-content-between align-items-center mb-3 feed-actions">
+                              <div className="d-flex gap-3 feed-action-group">
+                              <button 
+                                  className="btn btn-link p-0 text-decoration-none feed-action-btn"
                                 onClick={() => handleLike(post._id)}
                               >
                                 {isLiked ? (
@@ -436,20 +482,20 @@ const FeedPage = () => {
                                   <FaRegHeart className={darkMode ? "text-white" : "text-dark"} size={24} />
                                 )}
                               </button>
-                              <button
-                                className="btn btn-link p-0 text-decoration-none"
+                              <button 
+                                  className="btn btn-link p-0 text-decoration-none feed-action-btn"
                                 onClick={() => openCommentModal(post._id)}
                               >
                                 <FaCommentDots className={darkMode ? "text-white" : "text-dark"} size={24} />
                               </button>
-                              <button
-                                className="btn btn-link p-0 text-decoration-none"
+                              <button 
+                                  className="btn btn-link p-0 text-decoration-none feed-action-btn"
                                 onClick={() => copyShareLink(post._id)}
                               >
                                 <FaShare className={darkMode ? "text-white" : "text-dark"} size={24} />
                               </button>
                             </div>
-                            <span className={darkMode ? "text-light" : "text-muted"}>
+                              <span className={`${darkMode ? "text-light" : "text-muted"} feed-like-count`}>
                               <i className="fas fa-heart text-danger me-1"></i>
                               {likeCount} likes
                             </span>
@@ -460,24 +506,25 @@ const FeedPage = () => {
                             <div className={`mt-4 pt-3 border-top ${darkMode ? 'border-secondary' : ''}`}>
                               <h6 className="fw-bold mb-3">Quick Links</h6>
                               <div className="d-flex flex-wrap gap-2">
-                                <a href="#" className="btn btn-outline-primary btn-sm rounded-pill">
+                                <button type="button" className="btn btn-outline-primary btn-sm rounded-pill">
                                   View Dashboard
-                                </a>
-                                <a href="#" className="btn btn-outline-success btn-sm rounded-pill">
+                                </button>
+                                <button type="button" className="btn btn-outline-success btn-sm rounded-pill">
                                   Lifestyle Check
-                                </a>
-                                <a href="#" className="btn btn-outline-info btn-sm rounded-pill">
+                                </button>
+                                <button type="button" className="btn btn-outline-info btn-sm rounded-pill">
                                   Explore Data
-                                </a>
+                                </button>
                               </div>
                             </div>
                           )}
                         </div>
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 })}
-              </div>
+                </AnimatePresence>
+              </motion.div>
             )}
           </div>
         </div>
@@ -617,23 +664,88 @@ const FeedPage = () => {
 
       {/* Custom CSS */}
       <style jsx>{`
-        .feed-container .card {
-          transition: all 0.3s ease;
-          border: none;
+        .feed-page {
+          background: radial-gradient(circle at top, #eef2ff 0%, #f5f7fb 45%, #f8fafc 100%) !important;
         }
-        .feed-container .card:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 10px 30px rgba(0,0,0,0.1) !important;
+        .feed-navbar {
+          backdrop-filter: blur(10px);
+          background: rgba(255, 255, 255, 0.9) !important;
         }
-        .post-image {
+        .feed-icon-btn {
+          width: 40px;
+          height: 40px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .feed-profile-btn {
+          box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
+        }
+        .feed-main {
+          max-width: 760px;
+        }
+        .feed-empty-card {
+          border-radius: 20px;
+          background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        }
+        .feed-cta-btn {
+          box-shadow: 0 12px 24px rgba(37, 99, 235, 0.25);
+        }
+        .feed-card {
+          transition: transform 0.25s ease, box-shadow 0.25s ease;
+          border-radius: 18px;
+        }
+        .feed-card:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12) !important;
+        }
+        .feed-post-header {
+          background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        }
+        .feed-post-avatar {
+          box-shadow: 0 10px 20px rgba(15, 23, 42, 0.2);
+        }
+        .feed-ghost-btn {
+          border-radius: 999px;
+        }
+        .feed-post-image {
           position: relative;
           overflow: hidden;
         }
-        .post-image img {
+        .feed-post-image::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(180deg, rgba(15,23,42,0) 0%, rgba(15,23,42,0.25) 100%);
+          opacity: 0;
+          transition: opacity 0.4s ease;
+        }
+        .feed-post-image:hover::after {
+          opacity: 1;
+        }
+        .feed-post-image img {
           transition: transform 0.5s ease;
         }
-        .post-image:hover img {
-          transform: scale(1.05);
+        .feed-post-image:hover img {
+          transform: scale(1.04);
+        }
+        .feed-post-body {
+          background: #ffffff;
+        }
+        .feed-actions .feed-action-btn {
+          width: 38px;
+          height: 38px;
+          border-radius: 12px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: #f8fafc;
+        }
+        .feed-actions .feed-action-btn:hover {
+          background: #e2e8f0;
+        }
+        .feed-like-count {
+          font-weight: 600;
         }
         .badge.bg-info {
           background: linear-gradient(45deg, #17a2b8, #20c997) !important;
@@ -650,6 +762,60 @@ const FeedPage = () => {
           to {
             opacity: 1;
             transform: translateY(0);
+          }
+        }
+        @media (max-width: 992px) {
+          .feed-main {
+            max-width: 100%;
+          }
+        }
+        @media (max-width: 768px) {
+          .feed-navbar .container {
+            padding-left: 16px;
+            padding-right: 16px;
+          }
+          .feed-post-image img {
+            height: 280px !important;
+          }
+          .feed-post-body {
+            padding: 20px !important;
+          }
+          .feed-actions {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 10px;
+          }
+          .feed-action-group {
+            gap: 10px !important;
+          }
+        }
+        @media (max-width: 576px) {
+          .feed-navbar .container {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 12px;
+          }
+          .feed-profile-btn {
+            width: 100%;
+            justify-content: center;
+          }
+          .feed-post-header {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 10px;
+          }
+          .feed-post-avatar {
+            width: 44px !important;
+            height: 44px !important;
+          }
+          .feed-post-image img {
+            height: 220px !important;
+          }
+          .feed-actions {
+            align-items: stretch !important;
+          }
+          .feed-like-count {
+            align-self: flex-start;
           }
         }
       `}</style>
