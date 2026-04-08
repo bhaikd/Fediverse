@@ -29,13 +29,20 @@ Photoflux explores the future of decentralized social media using:
 > This is required because ngrok generates a new public URL on each restart, which must be updated in your application configuration (e.g., `BASE_URL`).
 
 
-## 🚀 Key Features
-
-### Core Platform
-- User Registration & JWT Authentication  
-- Create, view, and manage photo posts  
-- Follow / Unfollow users  
-- Like and comment on posts  
+### Key Features
+## Core Platform
+Secure User Authentication
+. Register and log in with JWT-based authentication for safe and scalable access control.
+Photo Sharing & Management
+. Upload, view, edit, and delete photo posts with ease.
+Social Interaction
+. Follow or unfollow users to build your personalized network.
+Engagement System
+. Like and comment on posts to interact with content and other users.
+Personalized Feed
+. View posts from users you follow in a dynamic and engaging feed.
+User Profiles
+. Access user profiles with their posts, followers, and following details.
 
 ### Fediverse / ActivityPub Features
 - WebFinger implementation  
